@@ -1,0 +1,246 @@
+import { fetchSystemPromptById } from '@/functions/database';
+
+export const maxDuration = 60;
+
+export async function POST(req: Request) {
+  try {
+    const { messages, scenarioId } = await req.json();
+
+    // Safely fetch system prompt
+    let systemInstructions = 'Anda adalah karakter AI yang tegas. Balas dengan 1-2 kalimat saja dalam Bahasa Indonesia.';
+    try {
+      const fetched = await fetchSystemPromptById(scenarioId);
+      if (fetched) systemInstructions = fetched;
+    } catch (dbErr) {
+      console.warn('[chat] DB fetch failed, using default:', dbErr);
+    }
+
+    const ollamaBase = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    const ollamaKey = process.env.OLLAMA_API_KEY;
+    const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1';
+
+    try {
+      return await callOllama(ollamaBase, ollamaKey, ollamaModel, messages, systemInstructions);
+    } catch (ollamaErr: any) {
+      const detail = String(ollamaErr?.message ?? ollamaErr);
+      console.error('[chat] Ollama error:', detail);
+
+      // Give user a helpful error
+      const isFetch = detail.includes('fetch failed') || detail.includes('ECONNREFUSED');
+      const msg = isFetch
+        ? `Ollama tidak berjalan. Buka terminal dan jalankan: ollama serve`
+        : `Ollama error: ${detail.slice(0, 200)}`;
+
+      return new Response(JSON.stringify({ error: msg }), {
+        status: 503, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  } catch (err) {
+    console.error('[chat] Unexpected error:', err);
+    return new Response(JSON.stringify({ error: 'Server error', detail: String(err) }), {
+      status: 500, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// ─── OLLAMA (local or remote) ─────────────────────────────────────────────────
+async function callOllama(
+  baseUrl: string,
+  apiKey: string | undefined,
+  model: string,
+  messages: any[],
+  system: string
+): Promise<Response> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: system },
+      ...messages.map((m: any) => ({ role: m.role, content: m.content })),
+    ],
+    stream: true,
+    options: { temperature: 0.85, num_predict: 200 },
+  };
+
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Ollama ${res.status}: ${errText.slice(0, 200)}`);
+  }
+
+  // Ollama streams NDJSON: one JSON object per line
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const json = JSON.parse(line);
+              const text: string | undefined = json?.message?.content;
+              if (text) controller.enqueue(encoder.encode(text));
+              if (json?.done) { controller.close(); return; }
+            } catch { /* skip */ }
+          }
+        }
+      } catch (e) { controller.error(e); }
+      finally { controller.close(); }
+    },
+  });
+
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+  });
+}
+
+// ─── GROQ (Free tier, OpenAI-compatible) ─────────────────────────────────────
+async function callGroq(apiKey: string, messages: any[], system: string): Promise<Response> {
+  const body = {
+    model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+    messages: [
+      { role: 'system', content: system },
+      ...messages.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+    ],
+    max_tokens: 200,
+    temperature: 0.85,
+    stream: true,
+  };
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[chat/groq] ${res.status}:`, errText);
+    return new Response(JSON.stringify({ error: `Groq error ${res.status}`, detail: errText }), {
+      status: 502, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Parse OpenAI SSE stream and pipe plain text
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (raw === '[DONE]') continue;
+            try {
+              const json = JSON.parse(raw);
+              const text: string | undefined = json?.choices?.[0]?.delta?.content;
+              if (text) controller.enqueue(encoder.encode(text));
+            } catch { /* skip malformed */ }
+          }
+        }
+      } catch (e) { controller.error(e); }
+      finally { controller.close(); }
+    },
+  });
+
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+  });
+}
+
+// ─── GEMINI (fallback) ────────────────────────────────────────────────────────
+async function callGemini(apiKey: string, messages: any[], system: string): Promise<Response> {
+  const MODEL = 'gemini-2.0-flash';
+
+  const contents: { role: string; parts: { text: string }[] }[] = [];
+  for (const m of messages as { role: string; content: string }[]) {
+    const geminiRole = m.role === 'assistant' ? 'model' : 'user';
+    const last = contents[contents.length - 1];
+    if (last && last.role === geminiRole) {
+      last.parts[0].text += '\n' + m.content;
+    } else {
+      contents.push({ role: geminiRole, parts: [{ text: m.content }] });
+    }
+  }
+  if (contents.length > 0 && contents[0].role !== 'user') {
+    contents.unshift({ role: 'user', parts: [{ text: '(mulai)' }] });
+  }
+
+  const body: Record<string, unknown> = {
+    contents,
+    generationConfig: { temperature: 0.85, maxOutputTokens: 150 },
+    system_instruction: { parts: [{ text: system }] },
+  };
+
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:streamGenerateContent?alt=sse&key=${apiKey}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
+
+  if (!geminiRes.ok) {
+    const errText = await geminiRes.text();
+    console.error(`[chat/gemini] ${geminiRes.status}:`, errText);
+    return new Response(JSON.stringify({ error: `Gemini error ${geminiRes.status}`, detail: errText }), {
+      status: 502, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      const reader = geminiRes.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (raw === '[DONE]') continue;
+            try {
+              const json = JSON.parse(raw);
+              const text: string | undefined = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (text) controller.enqueue(encoder.encode(text));
+            } catch { /* skip */ }
+          }
+        }
+      } catch (e) { controller.error(e); }
+      finally { controller.close(); }
+    },
+  });
+
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+  });
+}
