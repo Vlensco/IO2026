@@ -2,35 +2,56 @@ import { fetchSystemPromptById } from '@/functions/database';
 
 export const maxDuration = 60;
 
+// Language lock prefix — appended to every system prompt
+const LANG_LOCK = `
+PERATURAN MUTLAK:
+1. SELALU balas dalam Bahasa Indonesia. DILARANG KERAS menggunakan bahasa lain (English, dll) dalam kondisi apapun.
+2. Balas maksimal 2 kalimat singkat dan langsung sesuai karakter.
+3. Jangan pernah keluar dari peran karaktermu.
+`;
+
 export async function POST(req: Request) {
   try {
     const { messages, scenarioId } = await req.json();
 
-    // Safely fetch system prompt
-    let systemInstructions = 'Anda adalah karakter AI yang tegas. Balas dengan 1-2 kalimat saja dalam Bahasa Indonesia.';
+    // Safely fetch system prompt from DB
+    let basePrompt = 'Anda adalah karakter AI yang tegas. Balas dengan 1-2 kalimat saja dalam Bahasa Indonesia.';
     try {
       const fetched = await fetchSystemPromptById(scenarioId);
-      if (fetched) systemInstructions = fetched;
+      if (fetched) basePrompt = fetched;
     } catch (dbErr) {
       console.warn('[chat] DB fetch failed, using default:', dbErr);
     }
 
+    // Always enforce Indonesian language
+    const systemInstructions = LANG_LOCK + '\n\nKARAKTER & SKENARIO:\n' + basePrompt;
+
+    const groqKey = process.env.GROQ_API_KEY;
+    const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     const ollamaBase = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-    const ollamaKey = process.env.OLLAMA_API_KEY;
     const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1';
 
+    // Provider priority: Groq → Gemini → Ollama
+    if (groqKey) {
+      console.log('[chat] Using Groq');
+      return await callGroq(groqKey, messages, systemInstructions);
+    }
+
+    if (geminiKey) {
+      console.log('[chat] Using Gemini');
+      return await callGemini(geminiKey, messages, systemInstructions);
+    }
+
+    console.log('[chat] Using Ollama');
     try {
-      return await callOllama(ollamaBase, ollamaKey, ollamaModel, messages, systemInstructions);
+      return await callOllama(ollamaBase, undefined, ollamaModel, messages, systemInstructions);
     } catch (ollamaErr: any) {
       const detail = String(ollamaErr?.message ?? ollamaErr);
       console.error('[chat] Ollama error:', detail);
-
-      // Give user a helpful error
       const isFetch = detail.includes('fetch failed') || detail.includes('ECONNREFUSED');
       const msg = isFetch
-        ? `Ollama tidak berjalan. Buka terminal dan jalankan: ollama serve`
+        ? 'Ollama tidak berjalan. Tambahkan GROQ_API_KEY atau GOOGLE_GENERATIVE_AI_API_KEY di .env.local, atau jalankan: ollama serve'
         : `Ollama error: ${detail.slice(0, 200)}`;
-
       return new Response(JSON.stringify({ error: msg }), {
         status: 503, headers: { 'Content-Type': 'application/json' },
       });

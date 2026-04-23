@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Mic, PhoneOff, Activity, Volume2, SquareSquare, CheckCircle2, XCircle, ArrowLeft, Play } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 type ChatMessage = { role: 'user' | 'assistant'; content: string; id: string };
 
@@ -41,6 +42,7 @@ export default function SimulatorRoom() {
   const [livePatience, setLivePatience] = useState(0);
   const [liveClarity, setLiveClarity] = useState(0);
   const [responseTime, setResponseTime] = useState<number | null>(null);
+  const [userName, setUserName] = useState('Pengguna');
   const aiFinishedAt = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +50,31 @@ export default function SimulatorRoom() {
     setNotif({ show: true, msg, type });
     setTimeout(() => setNotif(prev => ({ ...prev, show: false })), 4000);
   };
+
+  // Fetch the logged-in user's registered full name
+  useEffect(() => {
+    async function fetchUserName() {
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
+      if (!user) return;
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single();
+      if (profile?.full_name) setUserName(profile.full_name);
+    }
+    fetchUserName();
+  }, []);
+
+  // Stop TTS when navigating away from the simulator
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   // ---- Core streaming chat function ----
   const sendToAI = useCallback(async (history: ChatMessage[]) => {
@@ -149,6 +176,9 @@ export default function SimulatorRoom() {
 
   // ---- End session + evaluate ----
   const endSession = async () => {
+    // Stop any playing TTS immediately
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+
     const visibleMessages = messages.filter(m => !m.content.startsWith('(Sistem:'));
     if (visibleMessages.length < 2) { notify('Lakukan minimal 1 percakapan untuk dievaluasi!', 'error'); return; }
     setIsEvaluating(true);
@@ -156,10 +186,35 @@ export default function SimulatorRoom() {
       const res = await fetch('/api/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: visibleMessages, scenarioName: sessionTitle, userName: 'Pengguna' }),
+        body: JSON.stringify({ messages: visibleMessages, scenarioName: sessionTitle, userName }),
       });
       const data = await res.json();
-      if (data.success) { setFinalScore(data.evaluation); notify('Evaluasi selesai! Skor tersimpan.', 'success'); }
+      if (data.success) { 
+        setFinalScore(data.evaluation); 
+
+        // Simpan ke Supabase dari sisi klien (karena butuh sesi user)
+        const { data: authData } = await supabase.auth.getUser();
+        const user = authData?.user;
+        if (user) {
+          const { error } = await supabase.from('sessions').insert([{
+            user_id: user.id,
+            scenario_id: scenarioId,
+            chat_transcript: visibleMessages,
+            patience_score: data.evaluation.patience_score,
+            clarity_score: data.evaluation.clarity_score,
+            final_feedback: data.evaluation.feedback_summary
+          }]);
+          
+          if (error) {
+            console.error('Supabase save error:', error);
+            notify('Evaluasi selesai, tapi gagal menyimpan ke riwayat.', 'error');
+          } else {
+            notify('Evaluasi selesai! Skor tersimpan.', 'success');
+          }
+        } else {
+          notify('Evaluasi selesai! Anda tidak masuk, riwayat tidak disimpan.', 'success');
+        }
+      }
       else notify('Gagal mengevaluasi. Coba lagi.', 'error');
     } catch { notify('Koneksi terputus saat evaluasi.', 'error'); }
     setIsEvaluating(false);
@@ -294,7 +349,7 @@ export default function SimulatorRoom() {
                     <div key={m.id} className={`border-l-4 pl-4 ${m.role === 'user' ? 'border-primary' : 'border-accent'}`}>
                       <div className="flex items-center mb-1 gap-2">
                         <p className={`text-xs font-semibold tracking-wider uppercase ${m.role === 'user' ? 'text-primary' : 'text-accent'}`}>
-                          {m.role === 'user' ? '🎙 Anda' : '🤖 AI Karakter'}
+                          {m.role === 'user' ? `🎙 ${userName}` : '🤖 AI Karakter'}
                         </p>
                         {m.role !== 'user' && <Volume2 size={11} className="text-accent/60" />}
                       </div>
