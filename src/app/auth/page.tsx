@@ -44,6 +44,7 @@ export default function AuthPage() {
       let errorMsg = error.message;
       if (errorMsg.includes('Invalid login credentials')) errorMsg = 'Email atau sandi yang Anda masukkan keliru.';
       if (errorMsg.includes('already registered')) errorMsg = 'Ups, alamat email ini sudah mempunyai akun!';
+      if (errorMsg.includes('Email not confirmed')) errorMsg = 'Email belum dikonfirmasi. Silakan cek inbox/spam email Anda, atau matikan "Confirm email" di Supabase Dashboard.';
       
       notify(errorMsg, 'error');
     } finally {

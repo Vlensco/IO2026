@@ -67,9 +67,18 @@ export default function SimulatorRoom() {
     fetchUserName();
   }, []);
 
-  // Stop TTS when navigating away from the simulator
+  // Stop TTS when navigating away or switching tabs
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -220,6 +229,14 @@ export default function SimulatorRoom() {
     setIsEvaluating(false);
   };
 
+  // ---- Exit to Dashboard Handler ----
+  const exitToDashboard = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    window.location.href = '/dashboard';
+  };
+
   // ---- Speech Recognition ----
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -282,7 +299,7 @@ export default function SimulatorRoom() {
             </div>
             <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-600/50 text-slate-300 italic text-sm">"{finalScore.feedback_summary}"</div>
             <div className="flex gap-3">
-              <button onClick={() => window.location.href = '/dashboard'} className="flex-1 py-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold transition">← Dasbor</button>
+              <button onClick={exitToDashboard} className="flex-1 py-4 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold transition">← Dasbor</button>
               <button onClick={() => { setFinalScore(null); setSessionStarted(false); setMessages([]); }} className="flex-1 py-4 rounded-xl bg-primary hover:bg-blue-600 text-white font-bold transition">Ulangi</button>
             </div>
           </div>
@@ -292,7 +309,7 @@ export default function SimulatorRoom() {
       {/* Header */}
       <header className="flex items-center justify-between bg-slate-800/40 px-4 py-3 rounded-2xl glass-card w-full mb-4 z-10 shrink-0 gap-4">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <button onClick={() => window.location.href = '/dashboard'} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-700 transition shrink-0">
+          <button onClick={exitToDashboard} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-700 transition shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="min-w-0">

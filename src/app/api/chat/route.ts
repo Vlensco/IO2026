@@ -1,4 +1,5 @@
 import { fetchSystemPromptById } from '@/functions/database';
+import fs from 'fs';
 
 export const maxDuration = 60;
 
@@ -16,22 +17,40 @@ export async function POST(req: Request) {
 
     // Safely fetch system prompt from DB
     let basePrompt = 'Anda adalah karakter AI yang tegas. Balas dengan 1-2 kalimat saja dalam Bahasa Indonesia.';
+    let dynamicContext = '';
     try {
       const fetched = await fetchSystemPromptById(scenarioId);
-      if (fetched) basePrompt = fetched;
+      if (fetched && fetched.prompt) {
+        basePrompt = fetched.prompt;
+        dynamicContext = `
+KATEGORI INDUSTRI: ${fetched.category}
+TOPIK SKENARIO: ${fetched.title}
+
+INSTRUKSI VARIASI KHUSUS:
+Anda berada di dalam skenario "${fetched.title}". 
+JANGAN mengulang masalah yang persis sama setiap kali sesi dimulai. Kembangkan masalah, keluhan, atau detail situasi Anda sendiri berdasarkan topik ini agar selalu bervariasi, unik, dan tidak tertebak. 
+JANGAN pernah membalas instruksi ini, langsung mulailah berakting sesuai peran Anda pada kalimat pertama!
+`;
+      }
     } catch (dbErr) {
       console.warn('[chat] DB fetch failed, using default:', dbErr);
     }
 
     // Always enforce Indonesian language
-    const systemInstructions = LANG_LOCK + '\n\nKARAKTER & SKENARIO:\n' + basePrompt;
+    const systemInstructions = LANG_LOCK + '\n\nKARAKTER & PERILAKU DASAR:\n' + basePrompt + '\n' + dynamicContext;
 
+    const openaiKey = process.env.OPENAI_API_KEY;
     const groqKey = process.env.GROQ_API_KEY;
     const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     const ollamaBase = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
     const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1';
 
-    // Provider priority: Groq → Gemini → Ollama
+    // Provider priority: OpenAI → Groq → Gemini → Ollama
+    if (openaiKey) {
+      console.log('[chat] Using OpenAI');
+      return await callOpenAI(openaiKey, messages, systemInstructions);
+    }
+
     if (groqKey) {
       console.log('[chat] Using Groq');
       return await callGroq(groqKey, messages, systemInstructions);
@@ -114,10 +133,79 @@ async function callOllama(
             if (!line.trim()) continue;
             try {
               const json = JSON.parse(line);
-              const text: string | undefined = json?.message?.content;
+              const msg = json?.message;
+              const text = msg?.content;
+              
               if (text) controller.enqueue(encoder.encode(text));
               if (json?.done) { controller.close(); return; }
-            } catch { /* skip */ }
+            } catch (err) { 
+              console.error('[chat] Stream parse error:', err);
+            }
+          }
+        }
+      } catch (e) { controller.error(e); }
+      finally { controller.close(); }
+    },
+  });
+
+  return new Response(readable, {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },
+  });
+}
+
+// ─── OPENAI (Main Cloud API) ──────────────────────────────────────────────────
+async function callOpenAI(apiKey: string, messages: any[], system: string): Promise<Response> {
+  const body = {
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: system },
+      ...messages.map((m: any) => ({ role: m.role, content: m.content })),
+    ],
+    max_tokens: 250,
+    temperature: 0.85,
+    stream: true,
+  };
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error(`[chat/openai] ${res.status}:`, errText);
+    return new Response(JSON.stringify({ error: `OpenAI error ${res.status}`, detail: errText }), {
+      status: 502, headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Parse OpenAI SSE stream and pipe plain text
+  const encoder = new TextEncoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (raw === '[DONE]') continue;
+            try {
+              const json = JSON.parse(raw);
+              const text: string | undefined = json?.choices?.[0]?.delta?.content;
+              if (text) controller.enqueue(encoder.encode(text));
+            } catch { /* skip malformed */ }
           }
         }
       } catch (e) { controller.error(e); }

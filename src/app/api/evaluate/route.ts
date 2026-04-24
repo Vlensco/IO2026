@@ -1,8 +1,14 @@
-import { google } from '@ai-sdk/google';
+import { createOpenAI } from '@ai-sdk/openai';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 
 export const maxDuration = 30;
+
+// Buat instance provider yang mengarah ke Ollama lokal (kompatibel dengan OpenAI)
+const ollamaProvider = createOpenAI({
+  baseURL: process.env.OLLAMA_BASE_URL ? `${process.env.OLLAMA_BASE_URL}/v1` : 'http://localhost:11434/v1',
+  apiKey: 'ollama', // Key sembarang untuk local
+});
 
 export async function POST(req: Request) {
   try {
@@ -16,9 +22,11 @@ export async function POST(req: Request) {
       Bersikaplah netral namun cukup ketat. Jika CS menjawab dengan pendek/kasar, nilainya harus kecil.
     `;
 
+    const modelName = process.env.OLLAMA_MODEL || 'deepseek-r1:1.5b';
+
     // Kita menyuruh AI membuat format JSON
     const result = await generateObject({
-      model: google('gemini-1.5-pro'),
+      model: ollamaProvider(modelName),
       system: systemPrompt,
       prompt: "Transkrip: " + JSON.stringify(messages),
       schema: z.object({

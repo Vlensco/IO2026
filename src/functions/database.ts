@@ -24,16 +24,24 @@ export async function fetchCategoriesWithScenarios(): Promise<Category[]> {
   return completeCategories;
 }
 
-export async function fetchSystemPromptById(scenarioId: string): Promise<string> {
+export async function fetchSystemPromptById(scenarioId: string): Promise<{prompt: string, title: string, category: string}> {
   const { data, error } = await supabase
     .from('scenarios')
-    .select('system_prompt')
+    .select('system_prompt, title, categories(title)')
     .eq('id', scenarioId)
     .single();
     
   if (error || !data) {
-    return 'Anda adalah karakter AI standar. Balas dengan maksimal 2 kalimat.';
+    return {
+      prompt: 'Anda adalah karakter AI standar. Balas dengan maksimal 2 kalimat.',
+      title: 'Skenario Default',
+      category: 'Kategori Default'
+    };
   }
   
-  return data.system_prompt;
+  return {
+    prompt: data.system_prompt,
+    title: data.title || '',
+    category: (data.categories as any)?.title || ''
+  };
 }
