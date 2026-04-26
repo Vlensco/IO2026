@@ -43,7 +43,7 @@ JANGAN pernah membalas instruksi ini, langsung mulailah berakting sesuai peran A
     const groqKey = process.env.GROQ_API_KEY;
     const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     const ollamaBase = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-    const ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1';
+    const ollamaModel = process.env.OLLAMA_MODEL || 'qwen3:14b';
 
     // Provider priority: OpenAI → Groq → Gemini → Ollama
     if (openaiKey) {
@@ -101,8 +101,10 @@ async function callOllama(
       ...messages.map((m: any) => ({ role: m.role, content: m.content })),
     ],
     stream: true,
-    options: { temperature: 0.85, num_predict: 200 },
+    options: { temperature: 0.75, num_ctx: 4096 }, // Hilangkan num_predict agar AI tidak terpotong, tambah context window
   };
+
+  console.log('[Ollama] Mengirim request dengan model:', model, '| Total giliran:', messages.length);
 
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
@@ -112,6 +114,7 @@ async function callOllama(
 
   if (!res.ok) {
     const errText = await res.text();
+    console.error('[Ollama] HTTP Error:', res.status, errText);
     throw new Error(`Ollama ${res.status}: ${errText.slice(0, 200)}`);
   }
 
@@ -122,6 +125,20 @@ async function callOllama(
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let isClosed = false;
+      let totalLength = 0;
+
+      const safeClose = () => {
+        if (!isClosed) { 
+          isClosed = true; 
+          controller.close(); 
+          console.log('[Ollama] Stream selesai. Total karakter di-generate:', totalLength);
+        }
+      };
+      const safeEnqueue = (chunk: Uint8Array) => {
+        if (!isClosed) controller.enqueue(chunk);
+      };
+
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -133,20 +150,35 @@ async function callOllama(
             if (!line.trim()) continue;
             try {
               const json = JSON.parse(line);
-              const msg = json?.message;
-              const text = msg?.content;
-              
-              if (text) controller.enqueue(encoder.encode(text));
-              if (json?.done) { controller.close(); return; }
-            } catch (err) { 
-              console.error('[chat] Stream parse error:', err);
+              const text = json?.message?.content;
+              if (text) {
+                totalLength += text.length;
+                safeEnqueue(encoder.encode(text));
+              }
+              if (json?.done) { safeClose(); return; }
+            } catch (err) {
+              // skip malformed JSON lines
             }
           }
         }
-      } catch (e) { controller.error(e); }
-      finally { controller.close(); }
+        // Jika stream putus tapi ada sisa buffer
+        if (buffer.trim()) {
+          try {
+            const json = JSON.parse(buffer);
+            if (json?.message?.content) {
+              totalLength += json.message.content.length;
+              safeEnqueue(encoder.encode(json.message.content));
+            }
+          } catch(e){}
+        }
+      } catch (e) { 
+        console.error('[Ollama] Stream error:', e);
+        if (!isClosed) controller.error(e); 
+      }
+      finally { safeClose(); }
     },
   });
+
 
   return new Response(readable, {
     headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' },

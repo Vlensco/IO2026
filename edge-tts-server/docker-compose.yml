@@ -1,0 +1,17 @@
+services:
+  edge-tts:
+    image: travisvn/openai-edge-tts:latest
+    container_name: simulacra-edge-tts
+    ports:
+      - "5050:5050"
+    environment:
+      API_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcGlrZXkiOiI0YzczZWQ0Ny01NTE0LTRmYzUtYjhiNS1jY2YzNjI4YWNmMTIiLCJwZXJtaXNzaW9ucyI6WyJhbGxvd19qb2luIl0sImlhdCI6MTc3NzA5MzgyMSwiZXhwIjoxOTM0ODgxODIxfQ.NCfHfdgqbQGqWSbG24g3DhsEahUymdLJFK42lWrDQAg"
+      PORT: "5050"
+      DEFAULT_VOICE: "id-ID-GadisNeural"
+      DEFAULT_RESPONSE_FORMAT: "mp3"
+      DEFAULT_SPEED: "1.0"
+      DEFAULT_LANGUAGE: "id-ID"
+      REQUIRE_API_KEY: "True"
+      REMOVE_FILTER: "False"
+      EXPAND_API: "True"
+    restart: unless-stopped
