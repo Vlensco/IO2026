@@ -72,18 +72,12 @@ Aplikasi akan berjalan di [http://localhost:3000](http://localhost:3000).
 
 ---
 
-## ⚠️ Mengapa Menggunakan Model Lokal? (Catatan untuk Juri)
+## ⚠️ Mengapa Menggunakan Model Lokal?
 
 Kami sengaja memilih **Local LLM (Ollama)** daripada API berbayar (seperti OpenAI/Gemini) karena:
 1. **Privasi & Keamanan**: Data sensitif pengguna (percakapan simulasi) tidak pernah keluar dari server/perangkat lokal.
 2. **Efisiensi Biaya**: Tidak ada biaya API per-token, memungkinkan penggunaan tanpa batas untuk edukasi.
 3. **Kemandirian**: Aplikasi tetap dapat berjalan tanpa koneksi internet (jika server TTS & DB di-hosting secara lokal).
-
----
-
-## 📽️ Demo Video
-Jika Anda mengalami kendala dalam setup lokal (karena keterbatasan hardware untuk menjalankan LLM), Anda dapat melihat demo fungsionalitas penuh kami di:
-👉 **[LINK VIDEO DEMO YOUTUBE DI SINI]**
 
 ---
 
