@@ -1,11 +1,11 @@
-# 🎭 Simulacra — AI-Powered Soft Skill Simulator
+# 🎭 Simuloka — AI-Powered Soft Skill Simulator
 
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![Ollama](https://img.shields.io/badge/Ollama-Local_AI-orange?style=for-the-badge&logo=ollama)](https://ollama.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-Database-green?style=for-the-badge&logo=supabase)](https://supabase.com/)
 [![TailwindCSS](https://img.shields.io/badge/Tailwind-CSS-blue?style=for-the-badge&logo=tailwindcss)](https://tailwindcss.com/)
 
-**Simulacra** adalah platform simulasi berbasis AI yang dirancang untuk membantu pengguna melatih kemampuan komunikasi dan *soft skills* mereka melalui skenario interaktif yang realistis. Menggunakan model AI lokal untuk privasi data maksimal dan biaya operasional nol.
+**Simuloka** adalah platform simulasi berbasis AI yang dirancang untuk membantu pengguna melatih kemampuan komunikasi dan *soft skills* mereka melalui skenario interaktif yang realistis. Menggunakan model AI lokal untuk privasi data maksimal dan biaya operasional nol.
 
 ---
 
@@ -91,4 +91,4 @@ Jika Anda mengalami kendala dalam setup lokal (karena keterbatasan hardware untu
 Proyek ini dibuat untuk keperluan kompetisi **IOFest** dan didistribusikan di bawah lisensi MIT.
 
 ---
-Created with ❤️ by **Team Simulacra**
+Created with ❤️ by **Team Simuloka**

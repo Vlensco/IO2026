@@ -1,5 +1,5 @@
 -- ==========================================
--- SIMULACRA V4.0 — FULL PRODUCTION SCHEMA
+-- SIMULOKA V4.0 — FULL PRODUCTION SCHEMA
 -- 15 Categories × 15 Scenarios = 225 Total
 -- ==========================================
 
