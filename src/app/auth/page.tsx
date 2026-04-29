@@ -1,5 +1,6 @@
 'use client';
 
+// Trigger hot reload
 import { useState } from 'react';
 import Link from 'next/link';
 import {

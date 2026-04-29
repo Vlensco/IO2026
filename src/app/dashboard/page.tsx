@@ -100,10 +100,10 @@ export default function Dashboard() {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
         setSessions(sess || []);
+        setLoading(false);
       } else {
-        setCategories(allCats);
+        router.push('/auth');
       }
-      setLoading(false);
     }
     loadData();
   }, []);

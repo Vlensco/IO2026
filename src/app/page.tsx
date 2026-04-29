@@ -3,9 +3,11 @@
 import { useEffect, useState } from 'react';
 import { Star, MapPin, Zap, Brain, Target, Sparkles, ChevronRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { supabase } from '@/lib/supabase';
 import { Particles } from '@/components/magicui/particles';
 import { HyperText } from '@/components/magicui/hyper-text';
 import { BlurFade, NumberTicker, WordRotate } from '@/components/magicui/animations';
+import { useRouter } from 'next/navigation';
 
 const REVIEWS = [
   { name: "Andi S.", role: "Siswa SMK Telkom Batam", stars: 5, feedback: "Skenario pelanggan ngamuk kerasa banget aslinya. Setelah 5x coba, saya jadi ngga takut lagi ngadepin komplain." },
@@ -35,8 +37,15 @@ const FEATURES = [
 
 export default function Home() {
   const [particleColor, setParticleColor] = useState('#3b82f6');
+  const router = useRouter();
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user) {
+        router.push('/dashboard');
+      }
+    });
+    
     const isDark = document.documentElement.classList.contains('dark');
     setParticleColor(isDark ? '#3b82f6' : '#2563eb');
 

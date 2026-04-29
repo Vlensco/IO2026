@@ -163,21 +163,27 @@ export function useSimulator(scenarioId: string, sessionTitle: string) {
         const { done, value } = await reader.read();
         if (done) break;
         full += decoder.decode(value, { stream: true });
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: full } : m));
+        
+        // Bersihkan tanda kutip di awal dan di akhir secara real-time
+        const cleaned = full.replace(/^["']+/g, '').replace(/["']+$/g, '');
+        
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: cleaned } : m));
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
-      if (!full.trim()) {
-        full = 'Maaf, saya tidak mengerti. Bisa diulangi?';
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: full } : m));
+      
+      let finalCleaned = full.replace(/^["']+/g, '').replace(/["']+$/g, '');
+      if (!finalCleaned.trim()) {
+        finalCleaned = 'Maaf, saya tidak mengerti. Bisa diulangi?';
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: finalCleaned } : m));
       }
       aiFinishedAt.current = Date.now();
       
       // Play TTS only if not muted
       if (!isMutedRef.current) {
-        await speakText(full);
+        await speakText(finalCleaned);
       }
       
-      return full;
+      return finalCleaned;
     } catch (err: any) {
       notify(`AI Error: ${err?.message || err}`, 'error');
       setMessages(prev => prev.filter(m => m.id !== assistantId));

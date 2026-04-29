@@ -9,6 +9,7 @@ PERATURAN MUTLAK:
 1. SELALU balas dalam Bahasa Indonesia. DILARANG KERAS menggunakan bahasa lain (English, dll) dalam kondisi apapun.
 2. Balas maksimal 2 kalimat singkat dan langsung sesuai karakter.
 3. Jangan pernah keluar dari peran karaktermu.
+4. DILARANG KERAS membungkus balasanmu dengan tanda kutip ("..."). Langsung bicara saja.
 `;
 
 export async function POST(req: Request) {

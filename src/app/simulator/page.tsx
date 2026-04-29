@@ -250,19 +250,23 @@ export default function SimulatorRoom() {
                 <div>
                   <div className="flex justify-between text-xs font-semibold mb-1">
                     <span className="text-outline">Pacing</span>
-                    <span className={scoreColor(sim.liveClarity)}>{sim.liveClarity >= 75 ? 'Optimal' : sim.liveClarity >= 50 ? 'Fair' : 'Poor'}</span>
+                    <span className={sim.exchangeCount === 0 ? 'text-outline' : scoreColor(sim.liveClarity)}>
+                      {sim.exchangeCount === 0 ? 'Pending...' : sim.liveClarity >= 75 ? 'Optimal' : sim.liveClarity >= 50 ? 'Fair' : 'Poor'}
+                    </span>
                   </div>
                   <div className="w-full bg-surface-container-highest rounded-full h-1">
-                    <div className={`${scoreBarColor(sim.liveClarity)} h-1 rounded-full transition-all duration-700`} style={{ width: `${sim.liveClarity}%` }} />
+                    <div className={`${sim.exchangeCount === 0 ? 'bg-surface-container-highest' : scoreBarColor(sim.liveClarity)} h-1 rounded-full transition-all duration-700`} style={{ width: `${sim.exchangeCount === 0 ? 0 : sim.liveClarity}%` }} />
                   </div>
                 </div>
                 <div>
                   <div className="flex justify-between text-xs font-semibold mb-1">
                     <span className="text-outline">Vocal Tone</span>
-                    <span className={scoreColor(sim.livePatience)}>{sim.livePatience >= 75 ? 'Confident' : sim.livePatience >= 50 ? 'Steady' : 'Anxious'}</span>
+                    <span className={sim.exchangeCount === 0 ? 'text-outline' : scoreColor(sim.livePatience)}>
+                      {sim.exchangeCount === 0 ? 'Pending...' : sim.livePatience >= 75 ? 'Confident' : sim.livePatience >= 50 ? 'Steady' : 'Anxious'}
+                    </span>
                   </div>
                   <div className="w-full bg-surface-container-highest rounded-full h-1">
-                    <div className={`${scoreBarColor(sim.livePatience)} h-1 rounded-full transition-all duration-700`} style={{ width: `${sim.livePatience}%` }} />
+                    <div className={`${sim.exchangeCount === 0 ? 'bg-surface-container-highest' : scoreBarColor(sim.livePatience)} h-1 rounded-full transition-all duration-700`} style={{ width: `${sim.exchangeCount === 0 ? 0 : sim.livePatience}%` }} />
                   </div>
                 </div>
               </div>
